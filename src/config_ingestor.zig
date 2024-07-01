@@ -88,7 +88,6 @@ pub fn init(allocator: std.mem.Allocator) !Self {
         }
     }
 
-    std.debug.print("Finished init\n", .{});
     return self;
 }
 
@@ -126,7 +125,6 @@ fn getArgTypeFromInput(input: []const u8) ?ArgType {
 
 pub fn deinit(self: Self) void {
     if (self.to_read_path) |path| {
-        std.debug.print("Path: {s}\n", .{path});
         self.allocator.free(path);
     }
 }

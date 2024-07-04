@@ -8,6 +8,6 @@ pub fn main() !void {
     std.debug.print("Path received {s}\n", .{path});
     defer ci.deinit();
 
-    const md = try md_ingestor.init(path);
+    const md = try md_ingestor.init_with_path(path);
     _ = md;
 }

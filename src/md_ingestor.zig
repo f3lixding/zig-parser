@@ -31,7 +31,7 @@ const Node = union(enum) {
         var res = ArrayList(u8).init(alloc);
 
         switch (self) {
-            .text => |text| return text,
+            .text => |text| return try alloc.dupe(u8, text),
             .list => |children| {
                 try res.appendSlice("<ul>");
 
@@ -210,7 +210,7 @@ test "init_test" {
     for (res.items) |node| {
         defer node.deinit();
         const html = try node.to_html(allocator);
-        // defer allocator.free(html);
+        defer allocator.free(html);
         std.debug.print("HTML: {s}\n", .{html});
     }
     defer res.deinit();

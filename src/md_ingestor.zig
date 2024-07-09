@@ -14,9 +14,8 @@ const State = enum {
     looking_for_list_items,
 };
 
-orig_buffer: ?[]const u8 = null,
+orig_buffer: ?[]const u8 = null, // this is not owned by the struct and should *not* be freed in free
 nodes: ?ArrayList(Node) = null,
-parsed_buffer: ?[]u8 = null,
 idx: usize = 0,
 capacity: usize = 1000,
 alloc: std.mem.Allocator,
@@ -27,18 +26,20 @@ const Node = union(enum) {
     list_item: ArrayList(Node),
     bold: ArrayList(Node),
 
-    pub fn to_html(self: Node, alloc: std.mem.Allocator) ![]const u8 {
+    pub fn toHtml(self: Node, alloc: std.mem.Allocator) ![]const u8 {
         var res = ArrayList(u8).init(alloc);
 
         switch (self) {
+            // this line is needed because the underlying text is owned by the ingestor
+            // so we would need to duplicate it otherwise we would end up doublefreeing
             .text => |text| return try alloc.dupe(u8, text),
             .list => |children| {
                 try res.appendSlice("<ul>");
 
                 for (children.items) |child| {
-                    const child_to_html = try child.to_html(alloc);
-                    defer alloc.free(child_to_html);
-                    try res.appendSlice(child_to_html);
+                    const child_toHtml = try child.to_html(alloc);
+                    defer alloc.free(child_toHtml);
+                    try res.appendSlice(child_toHtml);
                 }
 
                 try res.appendSlice("</ul>");
@@ -47,9 +48,9 @@ const Node = union(enum) {
                 try res.appendSlice("<li>");
 
                 for (children.items) |child| {
-                    const child_to_html = try child.to_html(alloc);
-                    defer alloc.free(child_to_html);
-                    try res.appendSlice(child_to_html);
+                    const child_toHtml = try child.to_html(alloc);
+                    defer alloc.free(child_toHtml);
+                    try res.appendSlice(child_toHtml);
                 }
 
                 try res.appendSlice("</li>");
@@ -58,9 +59,9 @@ const Node = union(enum) {
                 try res.appendSlice("<b>");
 
                 for (children.items) |child| {
-                    const child_to_html = try child.to_html(alloc);
-                    defer alloc.free(child_to_html);
-                    try res.appendSlice(child_to_html);
+                    const child_toHtml = try child.to_html(alloc);
+                    defer alloc.free(child_toHtml);
+                    try res.appendSlice(child_toHtml);
                 }
 
                 try res.appendSlice("</b>");
@@ -90,7 +91,7 @@ const Node = union(enum) {
     }
 };
 
-pub fn init_with_path(alloc: std.mem.Allocator, _: []const u8, capacity: usize) !Self {
+pub fn initWithPath(alloc: std.mem.Allocator, _: []const u8, capacity: usize) !Self {
     var array_list = ArrayList(Node).init(alloc);
     const msg = try alloc.dupe(u8, "Hello");
     array_list.append(.{ .text = msg }) catch unreachable;
@@ -99,7 +100,7 @@ pub fn init_with_path(alloc: std.mem.Allocator, _: []const u8, capacity: usize) 
     return .{ .alloc = alloc, .capacity = capacity, .idx = 1, .nodes = array_list };
 }
 
-pub fn init_with_buffer(alloc: std.mem.Allocator, buf: []const u8, _: usize) !Self {
+pub fn initWithBuffer(alloc: std.mem.Allocator, buf: []const u8, _: usize) !Self {
     return .{ .alloc = alloc, .orig_buffer = buf };
 }
 
@@ -118,9 +119,9 @@ pub fn deinit(self: *Self) void {
 pub fn parse(self: *Self) !void {
     const orig_buffer = self.orig_buffer orelse return ParsingError.EmptyBuffer;
     const end_idx = orig_buffer.len;
-    const asts = try self.parse_to_ast(0, end_idx);
+    const asts = try self.parseToAst(0, end_idx);
     self.nodes = asts;
-    try self.parse_to_html();
+    try self.parseToHtml();
 }
 
 // Sample
@@ -129,7 +130,7 @@ pub fn parse(self: *Self) !void {
 // - another list item here
 // **bold text here**
 // The merging of ArrayList of Nodes involves copying right now. But that's something to be optimized later
-fn parse_to_ast(self: *Self, state: State, begin_idx: usize, end_idx: usize) !ArrayList(Node) {
+fn parseToAst(self: *Self, state: State, begin_idx: usize, end_idx: usize) !ArrayList(Node) {
     std.debug.print("begin_idx: {}, end_idx: {}\n", .{ begin_idx, end_idx });
     const orig_buf = self.orig_buffer orelse return ParsingError.EmptyBuffer;
     var res = ArrayList(Node).init(self.alloc);
@@ -151,7 +152,7 @@ fn parse_to_ast(self: *Self, state: State, begin_idx: usize, end_idx: usize) !Ar
                             },
                         }
                     } else end_idx; // this should be the end of the list
-                    const children = try self.parse_to_ast(.looking_for_list_items, idx, loc_end_idx);
+                    const children = try self.parseToAst(.looking_for_list_items, idx, loc_end_idx);
                     const list = Node{
                         .list = children,
                     };
@@ -162,7 +163,7 @@ fn parse_to_ast(self: *Self, state: State, begin_idx: usize, end_idx: usize) !Ar
                     const loc_end_idx = for (idx..end_idx) |i| {
                         if (orig_buf[i] == '\n') break i;
                     } else end_idx;
-                    const children = try self.parse_to_ast(.normal, idx + 1, loc_end_idx);
+                    const children = try self.parseToAst(.normal, idx + 1, loc_end_idx);
                     const list_item = Node{ .list_item = children };
                     try res.append(list_item);
 
@@ -190,7 +191,7 @@ fn parse_to_ast(self: *Self, state: State, begin_idx: usize, end_idx: usize) !Ar
     return res;
 }
 
-fn parse_to_html(self: *Self) !void {
+fn parseToHtml(self: *Self) !void {
     const nodes = self.nodes orelse return ParsingError.EmtpyNodeList;
     _ = nodes;
 }
@@ -204,12 +205,12 @@ test "init_test" {
         \\- Another list item here
     ;
     const test_buf_heap = try allocator.dupe(u8, test_buf);
-    var ast = try Self.init_with_buffer(allocator, test_buf_heap, 10);
+    var ast = try Self.initWithBuffer(allocator, test_buf_heap, 10);
     defer ast.deinit();
-    const res = try ast.parse_to_ast(.normal, 0, ast.orig_buffer.?.len);
+    const res = try ast.parseToAst(.normal, 0, ast.orig_buffer.?.len);
     for (res.items) |node| {
         defer node.deinit();
-        const html = try node.to_html(allocator);
+        const html = try node.toHtml(allocator);
         defer allocator.free(html);
         std.debug.print("HTML: {s}\n", .{html});
     }

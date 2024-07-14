@@ -37,7 +37,7 @@ const Node = union(enum) {
                 try res.appendSlice("<ul>");
 
                 for (children.items) |child| {
-                    const child_toHtml = try child.to_html(alloc);
+                    const child_toHtml = try child.toHtml(alloc);
                     defer alloc.free(child_toHtml);
                     try res.appendSlice(child_toHtml);
                 }
@@ -48,7 +48,7 @@ const Node = union(enum) {
                 try res.appendSlice("<li>");
 
                 for (children.items) |child| {
-                    const child_toHtml = try child.to_html(alloc);
+                    const child_toHtml = try child.toHtml(alloc);
                     defer alloc.free(child_toHtml);
                     try res.appendSlice(child_toHtml);
                 }
@@ -59,7 +59,7 @@ const Node = union(enum) {
                 try res.appendSlice("<b>");
 
                 for (children.items) |child| {
-                    const child_toHtml = try child.to_html(alloc);
+                    const child_toHtml = try child.toHtml(alloc);
                     defer alloc.free(child_toHtml);
                     try res.appendSlice(child_toHtml);
                 }
@@ -91,13 +91,11 @@ const Node = union(enum) {
     }
 };
 
-pub fn initWithPath(alloc: std.mem.Allocator, _: []const u8, capacity: usize) !Self {
-    var array_list = ArrayList(Node).init(alloc);
-    const msg = try alloc.dupe(u8, "Hello");
-    array_list.append(.{ .text = msg }) catch unreachable;
-    array_list.append(.{ .list = ArrayList(Node).init(alloc) }) catch unreachable;
+pub fn initWithPath(alloc: std.mem.Allocator, path: []const u8, capacity: usize) !Self {
+    const file = try std.fs.openFileAbsolute(path, .{});
+    const file_buf = try file.readToEndAlloc(alloc, capacity);
 
-    return .{ .alloc = alloc, .capacity = capacity, .idx = 1, .nodes = array_list };
+    return .{ .alloc = alloc, .capacity = capacity, .idx = 1, .orig_buffer = file_buf };
 }
 
 pub fn initWithBuffer(alloc: std.mem.Allocator, buf: []const u8, _: usize) !Self {
@@ -119,7 +117,7 @@ pub fn deinit(self: *Self) void {
 pub fn parse(self: *Self) !void {
     const orig_buffer = self.orig_buffer orelse return ParsingError.EmptyBuffer;
     const end_idx = orig_buffer.len;
-    const asts = try self.parseToAst(0, end_idx);
+    const asts = try self.parseToAst(.normal, 0, end_idx);
     self.nodes = asts;
     try self.parseToHtml();
 }
@@ -193,7 +191,12 @@ fn parseToAst(self: *Self, state: State, begin_idx: usize, end_idx: usize) !Arra
 
 fn parseToHtml(self: *Self) !void {
     const nodes = self.nodes orelse return ParsingError.EmtpyNodeList;
-    _ = nodes;
+    var res = ArrayList(u8).init(self.alloc);
+    defer res.deinit();
+    for (nodes.items) |node| {
+        try res.appendSlice(try node.toHtml(self.alloc));
+    }
+    std.debug.print("{s}\n", .{res.items});
 }
 
 test "init_test" {
